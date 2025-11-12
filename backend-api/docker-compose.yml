@@ -1,0 +1,36 @@
+version: "3.8"
+services:
+  mongo:
+    image: mongo:6
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  centrifugo:
+    image: centrifugo/centrifugo:latest
+    restart: unless-stopped
+    command: centrifugo --config /etc/centrifugo/config.json
+    volumes:
+      - ./centrifugo_config.json:/etc/centrifugo/config.json:ro
+    ports:
+      - "8000:8000"
+
+  app:
+    build: .
+    image: chatapp-fastapi
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    depends_on:
+      - mongo
+      - centrifugo
+    ports:
+      - "8000:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  mongo_data:

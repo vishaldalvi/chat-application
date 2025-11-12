@@ -1,0 +1,673 @@
+openapi: 3.0.3
+info:
+  title: Chat Application API
+  description: Complete chat application with FastAPI, MongoDB and Centrifugo
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+            examples:
+              basic:
+                summary: Basic registration
+                value:
+                  username: "john_doe"
+                  email: "john@example.com"
+                  password: "password123"
+                  profile_picture: "https://example.com/avatar.jpg"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Bad request - user already exists
+        '500':
+          description: Internal server error
+
+  /auth/login:
+    post:
+      summary: Login user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+            examples:
+              basic:
+                summary: Basic login
+                value:
+                  email: "john@example.com"
+                  password: "password123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          description: Invalid credentials
+        '500':
+          description: Internal server error
+
+  /auth/logout:
+    post:
+      summary: Logout user
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+        '401':
+          description: Unauthorized
+
+  /centrifugo/token:
+    get:
+      summary: Get Centrifugo connection token
+      tags:
+        - Centrifugo
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+        '401':
+          description: Unauthorized
+
+  /users/me:
+    get:
+      summary: Get current user profile
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthorized
+
+  /users:
+    get:
+      summary: Get all users or search users
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search term for username or email
+          example: "john"
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthorized
+
+  /chats:
+    post:
+      summary: Create a new chat
+      tags:
+        - Chats
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCreate'
+            examples:
+              direct:
+                summary: Direct chat
+                value:
+                  chat_type: "direct"
+                  participants: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+              group:
+                summary: Group chat
+                value:
+                  name: "Team Chat"
+                  chat_type: "group"
+                  participants: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012", "507f1f77bcf86cd799439013"]
+                  description: "Team collaboration chat"
+      responses:
+        '201':
+          description: Chat created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+
+    get:
+      summary: Get user's chats
+      tags:
+        - Chats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chats retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatResponse'
+        '401':
+          description: Unauthorized
+
+  /chats/{chat_id}:
+    get:
+      summary: Get chat details
+      tags:
+        - Chats
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Chat ID
+          example: "607f1f77bcf86cd799439012"
+      responses:
+        '200':
+          description: Chat details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Chat not found
+
+  /messages:
+    post:
+      summary: Send a message
+      tags:
+        - Messages
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreate'
+            examples:
+              text:
+                summary: Text message
+                value:
+                  chat_id: "607f1f77bcf86cd799439012"
+                  content: "Hello, this is a test message!"
+                  message_type: "text"
+              reply:
+                summary: Reply message
+                value:
+                  chat_id: "607f1f77bcf86cd799439012"
+                  content: "This is a reply message"
+                  message_type: "text"
+                  reply_to: "707f1f77bcf86cd799439013"
+      responses:
+        '201':
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Chat not found
+
+  /chats/{chat_id}/messages:
+    get:
+      summary: Get chat messages
+      tags:
+        - Messages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Chat ID
+          example: "607f1f77bcf86cd799439012"
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Number of messages per page
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Chat not found
+
+  /typing:
+    post:
+      summary: Send typing indicator
+      tags:
+        - Real-time
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TypingIndicator'
+            examples:
+              typing_start:
+                summary: Start typing
+                value:
+                  chat_id: "607f1f77bcf86cd799439012"
+                  user_id: "507f1f77bcf86cd799439011"
+                  username: "john_doe"
+                  is_typing: true
+              typing_stop:
+                summary: Stop typing
+                value:
+                  chat_id: "607f1f77bcf86cd799439012"
+                  user_id: "507f1f77bcf86cd799439011"
+                  username: "john_doe"
+                  is_typing: false
+      responses:
+        '200':
+          description: Typing indicator sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "sent"
+        '401':
+          description: Unauthorized
+
+  /online-status:
+    post:
+      summary: Update online status
+      tags:
+        - Real-time
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnlineStatus'
+            examples:
+              online:
+                summary: Set online
+                value:
+                  user_id: "507f1f77bcf86cd799439011"
+                  username: "john_doe"
+                  is_online: true
+                  last_seen: "2024-01-15T10:30:00.000Z"
+              offline:
+                summary: Set offline
+                value:
+                  user_id: "507f1f77bcf86cd799439011"
+                  username: "john_doe"
+                  is_online: false
+                  last_seen: "2024-01-15T10:30:00.000Z"
+      responses:
+        '200':
+          description: Online status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "updated"
+        '401':
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    UserCreate:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: "john_doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          minLength: 6
+          example: "password123"
+        profile_picture:
+          type: string
+          format: uri
+          example: "https://example.com/avatar.jpg"
+
+    UserLogin:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          example: "password123"
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        username:
+          type: string
+          example: "john_doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        profile_picture:
+          type: string
+          example: "https://example.com/avatar.jpg"
+        role:
+          type: string
+          enum: [user, admin]
+          example: "user"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00.000Z"
+
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+        token_type:
+          type: string
+          example: "bearer"
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    ChatCreate:
+      type: object
+      required:
+        - chat_type
+        - participants
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: "Team Chat"
+        chat_type:
+          type: string
+          enum: [direct, group, channel]
+          example: "group"
+        participants:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          example: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+        description:
+          type: string
+          maxLength: 500
+          example: "Team collaboration chat"
+
+    ChatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "607f1f77bcf86cd799439012"
+        name:
+          type: string
+          nullable: true
+          example: "Team Chat"
+        chat_type:
+          type: string
+          enum: [direct, group, channel]
+          example: "group"
+        participants:
+          type: array
+          items:
+            type: string
+          example: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+        description:
+          type: string
+          nullable: true
+          example: "Team collaboration chat"
+        created_by:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:35:00.000Z"
+        last_message:
+          type: object
+          nullable: true
+
+    MessageCreate:
+      type: object
+      required:
+        - chat_id
+        - content
+      properties:
+        chat_id:
+          type: string
+          example: "607f1f77bcf86cd799439012"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          example: "Hello, this is a test message!"
+        message_type:
+          type: string
+          enum: [text, image, file, system]
+          default: "text"
+          example: "text"
+        reply_to:
+          type: string
+          nullable: true
+          example: "707f1f77bcf86cd799439013"
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "707f1f77bcf86cd799439013"
+        chat_id:
+          type: string
+          example: "607f1f77bcf86cd799439012"
+        sender_id:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        sender_username:
+          type: string
+          example: "john_doe"
+        content:
+          type: string
+          example: "Hello, this is a test message!"
+        message_type:
+          type: string
+          enum: [text, image, file, system]
+          example: "text"
+        reply_to:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:40:00.000Z"
+
+    TypingIndicator:
+      type: object
+      required:
+        - chat_id
+        - user_id
+        - username
+        - is_typing
+      properties:
+        chat_id:
+          type: string
+          example: "607f1f77bcf86cd799439012"
+        user_id:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        username:
+          type: string
+          example: "john_doe"
+        is_typing:
+          type: boolean
+          example: true
+
+    OnlineStatus:
+      type: object
+      required:
+        - user_id
+        - username
+        - is_online
+        - last_seen
+      properties:
+        user_id:
+          type: string
+          example: "507f1f77bcf86cd799439011"
+        username:
+          type: string
+          example: "john_doe"
+        is_online:
+          type: boolean
+          example: true
+        last_seen:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00.000Z"
+
+tags:
+  - name: Authentication
+    description: User authentication endpoints
+  - name: Users
+    description: User management endpoints
+  - name: Chats
+    description: Chat management endpoints
+  - name: Messages
+    description: Message management endpoints
+  - name: Real-time
+    description: Real-time features endpoints
+  - name: Centrifugo
+    description: Centrifugo integration endpoints
