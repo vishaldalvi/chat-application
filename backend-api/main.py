@@ -8,6 +8,7 @@ from fastapi import (
     File,
     WebSocket,
     WebSocketDisconnect,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -359,107 +360,124 @@ async def get_chat(
 
 @app.post("/messages", response_model=MessageResponse)
 async def send_message(
-    chat_id: str = Form(...),
+    request: Request,
+    chat_id: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
-    message_type: str = Form("text"),
+    message_type: Optional[str] = Form("text"),
     reply_to: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    chats_collection = mongodb.get_collection(Collections.CHATS)
-    messages_collection = mongodb.get_collection(Collections.MESSAGES)
+    try:
+        if request.headers.get("content-type", "").startswith("application/json"):
+            data = await request.json()
+            chat_id = data.get("chat_id")
+            content = data.get("content")
+            message_type = data.get("message_type", "text")
+            reply_to = data.get("reply_to")
 
-    # Verify chat exists and user is participant
-    chat = await chats_collection.find_one(
-        {"_id": ObjectId(chat_id), "participants": current_user.id}
-    )
-
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found or access denied",
-        )
-
-    # Handle file upload if present
-    file_info = None
-    if file and message_type == "file":
-        try:
-            # Validate file size (e.g., 10MB limit)
-            max_size = 10 * 1024 * 1024
-            file_content = await file.read()
-
-            if len(file_content) > max_size:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="File size too large. Maximum size is 10MB.",
-                )
-
-            # Reset file pointer after reading
-            await file.seek(0)
-
-            # Save file and get file info
-            file_info = save_upload_file(file)
-
-        except Exception as e:
+        if not chat_id:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing file: {str(e)}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chat ID is required.",
             )
 
-    # Create message document
-    message_dict = {
-        "chat_id": chat_id,
-        "content": content,
-        "sender_id": current_user.id,
-        "sender_username": current_user.username,
-        "message_type": message_type,
-        "created_at": datetime.now(),
-        "reply_to": reply_to,
-    }
+        chats_collection = mongodb.get_collection(Collections.CHATS)
+        messages_collection = mongodb.get_collection(Collections.MESSAGES)
 
-    # Add file info if available
-    if file_info:
-        message_dict.update(
-            {
-                "file_path": file_info["file_path"],
-                "file_name": file_info["file_name"],
-                "file_size": file_info["file_size"],
-                "file_type": file_info["file_type"],
-            }
+        # Verify chat exists and user is participant
+        chat = await chats_collection.find_one(
+            {"_id": ObjectId(chat_id), "participants": current_user.id}
         )
 
-    # Insert message into database
-    result = await messages_collection.insert_one(message_dict)
-    message_dict["id"] = str(result.inserted_id)
+        if not chat:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat not found or access denied",
+            )
 
-    # Serialize for Centrifugo
-    serialized_message = serialize_doc(message_dict.copy())
+        # Handle file upload if present
+        file_info = None
+        if file and message_type == "file":
+            try:
+                # Validate file size (e.g., 10MB limit)
+                max_size = 10 * 1024 * 1024
+                file_content = await file.read()
 
-    # Prepare Centrifugo message data
-    centrifugo_data = {
-        "type": "new_message",
-        "message": serialized_message,
-        "chat_id": chat_id,
-        "sender_id": current_user.id,
-        "timestamp": datetime.now().isoformat(),
-    }
+                if len(file_content) > max_size:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="File size too large. Maximum size is 10MB.",
+                    )
 
-    # Publish to Centrifugo
-    publish_success = await centrifugo_client.publish(
-        channel=f"chat-{chat_id}",
-        data=centrifugo_data,
-    )
+                # Reset file pointer after reading
+                await file.seek(0)
 
-    if not publish_success:
-        logger.error(f"Failed to publish message to Centrifugo for chat {chat_id}")
+                # Save file and get file info
+                file_info = save_upload_file(file)
 
-    # Update chat's last activity
-    await chats_collection.update_one(
-        {"_id": ObjectId(chat_id)},
-        {"$set": {"last_activity": datetime.now()}},
-    )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error processing file: {str(e)}",
+                )
 
-    return MessageResponse(**message_dict)
+        # Create message document
+        message_dict = {
+            "chat_id": chat_id,
+            "content": content,
+            "sender_id": current_user.id,
+            "sender_username": current_user.username,
+            "message_type": message_type,
+            "created_at": datetime.now(),
+            "reply_to": reply_to,
+        }
+
+        # Add file info if available
+        if file_info:
+            message_dict.update(
+                {
+                    "file_path": file_info["file_path"],
+                    "file_name": file_info["file_name"],
+                    "file_size": file_info["file_size"],
+                    "file_type": file_info["file_type"],
+                }
+            )
+
+        # Insert message into database
+        result = await messages_collection.insert_one(message_dict)
+        message_dict["id"] = str(result.inserted_id)
+
+        # Serialize for Centrifugo
+        serialized_message = serialize_doc(message_dict.copy())
+
+        # Prepare Centrifugo message data
+        centrifugo_data = {
+            "type": "new_message",
+            "message": serialized_message,
+            "chat_id": chat_id,
+            "sender_id": current_user.id,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        # Publish to Centrifugo
+        publish_success = await centrifugo_client.publish(
+            channel=f"chat-{chat_id}",
+            data=centrifugo_data,
+        )
+
+        if not publish_success:
+            logger.error(f"Failed to publish message to Centrifugo for chat {chat_id}")
+
+        # Update chat's last activity
+        await chats_collection.update_one(
+            {"_id": ObjectId(chat_id)},
+            {"$set": {"last_activity": datetime.now()}},
+        )
+
+        return MessageResponse(**message_dict)
+    except Exception as e:
+        raise e
 
 
 @app.get("/chats/{chat_id}/messages", response_model=List[MessageResponse])
