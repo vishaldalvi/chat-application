@@ -11,6 +11,7 @@ export default defineConfig({
       "/api": {
         target: "http://10.10.7.30:8001",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, ""),
         configure: (proxy, options) => {
           proxy.on("proxyReq", (proxyReq, req, res) => {

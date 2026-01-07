@@ -2,7 +2,7 @@ import axios from "axios";
 import Cookies from "js-cookie";
 
 const API_BASE_URL = import.meta.env.API_BASE_URL || "/api";
-
+console.log(API_BASE_URL);
 class ApiService {
   constructor() {
     this.client = axios.create({
